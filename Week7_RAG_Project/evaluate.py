@@ -1,15 +1,4 @@
-"""
-Evaluate your RAG pipeline against the Open RAG Benchmark ground truth
-========================================================================
-Runs your rag.py pipeline against the sampled queries.json (produced by
-download_ragbench.py) and compares generated answers to the dataset's
-reference answers.
 
-USAGE
------
-    python evaluate.py                 # evaluate all sampled queries
-    python evaluate.py --limit 10      # evaluate only the first 10
-"""
 
 import argparse
 import json

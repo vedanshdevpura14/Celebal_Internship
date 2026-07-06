@@ -1,37 +1,3 @@
-"""
-Document Question Answering System (RAG)
-==========================================
-A Retrieval-Augmented Generation pipeline that answers questions
-based on your own documents (PDF or TXT).
-
-USAGE
------
-1) Put your PDF/TXT files inside the `data/` folder.
-
-2) Build the vector database (run this once, or whenever you add new docs):
-       python rag.py ingest
-
-3) Ask questions:
-       python rag.py ask "What is the main idea of the document?"
-
-   Or start an interactive chat loop:
-       python rag.py chat
-
-SETUP
------
-Install dependencies first:
-    pip install -r requirements.txt
-
-You need a free Google Gemini API key for the answer-generation step.
-Get one at: https://aistudio.google.com/apikey (no credit card needed)
-Set it as an environment variable before running:
-    export GOOGLE_API_KEY="AI...."      (Mac/Linux)
-    set GOOGLE_API_KEY=AI....           (Windows, current session)
-    setx GOOGLE_API_KEY "AI...."        (Windows, permanent)
-
-Embeddings (Step: turning text into vectors) run 100% locally and are free —
-no API key needed for that part.
-"""
 
 import os
 import sys
@@ -49,9 +15,8 @@ DB_DIR = "chroma_db"
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
-# ---------------------------------------------------------------------------
+
 # Stage 1 + 2: Document Ingestion + Text Chunking
-# ---------------------------------------------------------------------------
 def load_documents():
     """Load every PDF/TXT file inside the data/ folder."""
     docs = []
@@ -81,9 +46,7 @@ def chunk_documents(docs, chunk_size=500, chunk_overlap=50):
     return splitter.split_documents(docs)
 
 
-# ---------------------------------------------------------------------------
 # Stage 3 + 4: Embedding Creation + Vector Database
-# ---------------------------------------------------------------------------
 def build_vectorstore(chunks):
     """Embed chunks and persist them in a local Chroma vector database."""
     embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
@@ -105,9 +68,8 @@ def load_vectorstore():
     return Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
 
 
-# ---------------------------------------------------------------------------
 # Stage 5 + 6 + 7: Query Processing, Context Retrieval, Answer Generation
-# ---------------------------------------------------------------------------
+
 def build_qa_chain(vectorstore, k=6):
     """Wire retriever + LLM together into a question-answering chain."""
     if not os.environ.get("GOOGLE_API_KEY"):
@@ -153,9 +115,8 @@ def ask_question(question):
     print()
 
 
-# ---------------------------------------------------------------------------
 # CLI entry point
-# ---------------------------------------------------------------------------
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)

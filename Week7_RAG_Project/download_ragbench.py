@@ -1,35 +1,3 @@
-"""
-Download & prepare the Open RAG Benchmark dataset (vectara/open_ragbench)
-==========================================================================
-This dataset is NOT a simple CSV/JSON table - it's a BEIR-style benchmark
-built from arXiv PDFs, structured as:
-
-    official/pdf/arxiv/
-    ├── corpus/{PAPER_ID}.json   -> title, abstract, sections (text+tables+images)
-    ├── queries.json             -> ~3045 questions
-    ├── qrels.json               -> which paper/section answers which query
-    ├── answers.json             -> ground-truth answers
-    └── pdf_urls.json
-
-This script:
-  1. Downloads a sample of N papers from `corpus/`
-  2. Converts each paper's sections into a plain-text file (for your RAG pipeline)
-  3. Filters queries.json / qrels.json / answers.json down to only the
-     questions that belong to the papers you downloaded
-  4. Saves everything into data/ and eval/ so rag.py can use it directly
-
-USAGE
------
-    pip install huggingface_hub
-    python download_ragbench.py --num-papers 20
-
-Then run your existing pipeline:
-    python rag.py ingest
-    python rag.py ask "some question"
-
-Or evaluate against ground truth:
-    python evaluate.py
-"""
 
 import argparse
 import json

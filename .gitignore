@@ -1,0 +1,4 @@
+Week7_RAG_Project/chroma_db/
+Week7_RAG_Project/data/
+__pycache__/
+*.pyc
