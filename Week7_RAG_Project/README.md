@@ -2,6 +2,11 @@
 
 A Retrieval-Augmented Generation pipeline that answers questions grounded in your own documents (PDFs or text files), instead of relying only on an LLM's internal knowledge.
 
+🌐 Live Demo
+
+🚀 Try the application here:
+https://document-question-answering-rag.streamlit.app/
+
 ## How it works (pipeline stages)
 
 1. **Document Ingestion** — load PDFs/TXT files from `data/`
