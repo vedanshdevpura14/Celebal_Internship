@@ -1,4 +1,16 @@
-Week7_RAG_Project/chroma_db/
-Week7_RAG_Project/data/
+# Secrets - never commit
+.streamlit/secrets.toml
+
+# Virtual environment
+venv/
+
+# Python cache
 __pycache__/
 *.pyc
+
+# Vector DB (usually large, regeneratable)
+chroma_db/
+
+# Data files (optional - depends if you want to share your dataset)
+# data/
+# eval/

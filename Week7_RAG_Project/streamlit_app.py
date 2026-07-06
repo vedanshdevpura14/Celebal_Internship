@@ -1,19 +1,11 @@
-"""
-Streamlit web app for the Document Question Answering (RAG) system.
 
-Run locally with:
-    streamlit run streamlit_app.py
-
-Deploy on Streamlit Community Cloud by pointing it at this file.
-Requires a GOOGLE_API_KEY set in Streamlit secrets (see README).
-"""
 
 import os
 import tempfile
 
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -24,18 +16,18 @@ st.set_page_config(page_title="Document Q&A (RAG)", page_icon="📄", layout="ce
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
-# ---------------------------------------------------------------------------
 # API key: read from Streamlit secrets (cloud) or environment variable (local)
-# ---------------------------------------------------------------------------
+
 def get_api_key():
     if "GOOGLE_API_KEY" in st.secrets:
         return st.secrets["GOOGLE_API_KEY"]
-    return os.environ.get("GOOGLE_API_KEY")
+    elif os.getenv("GOOGLE_API_KEY"):
+        return os.getenv("GOOGLE_API_KEY")
+    else:
+        return st.text_input("Enter your Google API Key:", type="password")
 
 
-# ---------------------------------------------------------------------------
 # Cached resources so we don't reload the embedding model on every interaction
-# ---------------------------------------------------------------------------
 @st.cache_resource
 def load_embeddings():
     return HuggingFaceEmbeddings(model_name=EMBED_MODEL)
@@ -74,9 +66,7 @@ def build_qa_chain(vectorstore, api_key, k=6):
     return RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=True)
 
 
-# ---------------------------------------------------------------------------
 # UI
-# ---------------------------------------------------------------------------
 st.title("📄 Document Question Answering (RAG)")
 st.caption("Upload a PDF or text file, then ask questions grounded in its content.")
 
