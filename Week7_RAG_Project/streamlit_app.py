@@ -6,7 +6,7 @@ import tempfile
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA
@@ -57,8 +57,10 @@ def load_and_chunk(uploaded_files):
 
 def build_vectorstore(chunks):
     embeddings = load_embeddings()
-    return Chroma.from_documents(documents=chunks, embedding=embeddings)
-
+    return FAISS.from_documents(
+        documents=chunks,
+        embedding=embeddings
+    )
 
 def build_qa_chain(vectorstore, api_key, k=6):
     retriever = vectorstore.as_retriever(search_kwargs={"k": k})
