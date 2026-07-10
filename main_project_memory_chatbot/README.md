@@ -69,6 +69,7 @@ python src/eval.py
 ## Deployment
 This project is ready to be deployed on platforms like **Render**, **Railway**, or **Heroku**. 
 - Simply upload the files to GitHub.
-- Connect your GitHub repo to your hosting platform.
-- Use the Build Command: `pip install -r requirements.txt && python src/rag_setup.py`
+- Connect your GitHub repo to your hosting platform (e.g. Render).
+- **Environment Variables**: You MUST set `GEMINI_API_KEY` to a free Google Gemini API key.
+- Use the Build Command: `pip install -r requirements.txt` (The vector DB is already built and pushed via `data/` folder).
 - Use the Start Command: `uvicorn src.main:app --host 0.0.0.0 --port $PORT`
