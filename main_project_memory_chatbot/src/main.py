@@ -8,7 +8,6 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import uvicorn
 import chromadb
-from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,7 +17,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MEMORY_DB_PATH = os.path.join(BASE_DIR, "data", "memory.db")
 CHROMA_DB_DIR = os.path.join(BASE_DIR, "data", "chroma_db")
 CHROMA_COLLECTION_NAME = "chatbot_knowledge"
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
 # Ensure data directory exists
 os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
@@ -128,12 +126,20 @@ def web_search(query: str) -> str:
 def retrieve_rag(query: str) -> str:
     print("Performing RAG retrieval...")
     try:
-        model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        import chromadb.utils.embedding_functions as embedding_functions
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return "RAG retrieval failed: GEMINI_API_KEY is not set."
+            
+        google_ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+            api_key=api_key,
+            model_name="models/gemini-embedding-2"
+        )
         client = chromadb.PersistentClient(path=CHROMA_DB_DIR)
-        collection = client.get_or_create_collection(name=CHROMA_COLLECTION_NAME)
-        query_embedding = model.encode([query]).tolist()
-        results = collection.query(query_embeddings=query_embedding, n_results=3)
-        return "\n\n".join(results["documents"][0]) if results and "documents" in results else "No knowledge base documents found."
+        collection = client.get_or_create_collection(name=CHROMA_COLLECTION_NAME, embedding_function=google_ef)
+        results = collection.query(query_texts=[query], n_results=3)
+        
+        return "\n\n".join(results["documents"][0]) if results and "documents" in results and results["documents"][0] else "No knowledge base documents found."
     except Exception as e:
         return f"RAG retrieval failed: {e}"
 

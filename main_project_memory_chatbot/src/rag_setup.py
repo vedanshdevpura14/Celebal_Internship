@@ -4,7 +4,6 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import chromadb
-from sentence_transformers import SentenceTransformer
 
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -98,19 +97,48 @@ def run_embed_store():
     
     with open(chunks_path, "r", encoding="utf-8") as f:
         chunks = json.load(f)
-    print(f"Loading embedding model: {EMBEDDING_MODEL_NAME} ...")
-    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("\nERROR: GEMINI_API_KEY environment variable is missing!")
+        print("Please set it in your terminal or .env file before running this.")
+        return
+        
+    print("Connecting to Google Gemini API for embeddings...")
+    import chromadb.utils.embedding_functions as embedding_functions
+    google_ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+        api_key=api_key,
+        model_name="models/gemini-embedding-2"
+    )
     
     texts = [c["text"] for c in chunks]
     ids = [c["id"] for c in chunks]
     metadatas = [{"source": c["source"]} for c in chunks]
     
-    print("Generating embeddings...")
-    embeddings = model.encode(texts, show_progress_bar=True).tolist()
-    
     client = chromadb.PersistentClient(path=CHROMA_DB_DIR)
-    collection = client.get_or_create_collection(name=CHROMA_COLLECTION_NAME)
-    collection.upsert(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
+    
+    # Delete the old local model collection to avoid dimensionality conflicts
+    try:
+        client.delete_collection(name=CHROMA_COLLECTION_NAME)
+    except:
+        pass
+        
+    collection = client.create_collection(name=CHROMA_COLLECTION_NAME, embedding_function=google_ef)
+    
+    print("Generating embeddings via API and storing in Chroma...")
+    import time
+    # Send in smaller batches with delays to avoid Google API rate limits for free tier
+    batch_size = 25
+    for i in range(0, len(texts), batch_size):
+        end = min(i + batch_size, len(texts))
+        print(f"  Processing batch {i} to {end}...")
+        collection.add(
+            ids=ids[i:end],
+            documents=texts[i:end],
+            metadatas=metadatas[i:end]
+        )
+        time.sleep(5) # Pause for 5 seconds to bypass free tier rate limits
+        
     print(f"Stored {len(chunks)} chunks in ChromaDB.")
 
 def main():
