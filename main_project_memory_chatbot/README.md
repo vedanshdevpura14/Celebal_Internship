@@ -1,109 +1,74 @@
-# Memory-Augmented Chatbot — Day 1 Starter (RAG foundation)
+# Memory-Augmented Chatbot (Advanced Beginner Project)
 
-This is the starting skeleton for your project. It builds the **static
-knowledge layer (RAG)** first, since Knowledge Graph, Memory, and LangGraph
-routing all sit on top of a working RAG pipeline.
+This project demonstrates a full end-to-end intelligent chatbot system that integrates **Retrieval-Augmented Generation (RAG)**, a **Knowledge Graph**, **Long-Term Memory**, and **Dynamic Web Search Tools**—all orchestrated cleanly using **LangGraph**.
 
-Everything here runs **locally and for free** — no API keys needed.
+While it meets advanced architectural requirements, the code is structured in a beginner-friendly way, keeping all the logic contained in just a few files rather than a massive enterprise framework.
 
 ## What's in this folder
 
 ```
 memory_chatbot/
-├── requirements.txt        # all Python packages you need
+├── requirements.txt        # All Python packages needed
 ├── data/
-│   ├── raw/                # scraped web pages land here (.txt)
-│   ├── processed/          # chunked text lands here (chunks.json)
-│   └── chroma_db/          # your local vector database (auto-created)
+│   ├── memory.db           # SQLite database for User Memory & Knowledge Graph
+│   └── chroma_db/          # Local vector database for RAG context
 └── src/
-    ├── config.py           # all settings in one place
-    ├── scraper.py          # STEP 1: scrape web pages
-    ├── chunker.py          # STEP 2: split text into chunks
-    ├── embed_store.py      # STEP 3: embed chunks + store in vector DB
-    ├── retrieve.py         # STEP 4: test searching your knowledge base
-    └── llm_answer.py       # STEP 5: full RAG loop with a local LLM (Ollama)
+    ├── rag_setup.py        # STEP 1: Scrape, chunk, and embed static data
+    ├── main.py             # STEP 2: The core backend, LangGraph, and UI
+    └── eval.py             # STEP 3: Automated LLM-as-a-judge evaluation
 ```
 
-## One-time setup
+## Features Complete
+
+1. **RAG Pipeline:** Static web knowledge is scraped, chunked, and embedded into a local ChromaDB vector database.
+2. **Knowledge Graph:** Extracts `(Entity A, relation, Entity B)` triples dynamically and stores them in a local SQLite Triplestore.
+3. **Long-Term Memory:** Extracts user preferences and chat history and saves them to a local SQLite database.
+4. **LangGraph Orchestration:** A defined `StateGraph` routes queries to either the `RAG/Graph Node`, the `Web Search Node` (DuckDuckGo), or the `Direct LLM Node`.
+5. **Context-Aware Responses:** Merges user memory, chat history, and retrieved context to answer accurately.
+6. **Evaluation Framework:** An automated script (`eval.py`) that uses LLM-as-a-judge to score answers out of 10 for Correctness and Context Relevance.
+7. **FastAPI & UI:** A beautiful, responsive glassmorphism interface powered directly by the FastAPI backend.
+
+## One-time Setup
 
 1. Make sure you have **Python 3.10+** installed.
-2. Open a terminal in this `memory_chatbot/` folder.
-3. (Recommended) create a virtual environment:
-   ```
+2. Open a terminal in this project folder.
+3. (Recommended) Create a virtual environment:
+   ```bash
    python -m venv venv
-   source venv/bin/activate      # on Mac/Linux
-   venv\Scripts\activate         # on Windows
+   # On Mac/Linux:
+   source venv/bin/activate
+   # On Windows:
+   venv\Scripts\activate
    ```
 4. Install dependencies:
-   ```
+   ```bash
    pip install -r requirements.txt
    ```
-5. (Optional, for Step 5 only) Install [Ollama](https://ollama.com), then run:
-   ```
-   ollama pull llama3
-   ```
-   This downloads a free local LLM (~4-5GB) that runs entirely on your machine.
 
-## How to run it (in order)
+## How to run the project
 
+### 1. Build the Knowledge Base
+You only need to run this once to scrape the Wikipedia data and build the Vector Database:
 ```bash
-cd src
-
-# Step 1: Scrape a few web pages (edit the URLS list in scraper.py first)
-python scraper.py
-
-# Step 2: Split scraped text into chunks
-python chunker.py
-
-# Step 3: Embed chunks and store them in the local vector database
-python embed_store.py
-
-# Step 4: Test that retrieval works (no LLM needed yet)
-python retrieve.py "What is machine learning?"
-
-# Step 5 (optional, needs Ollama installed): full RAG answer
-python llm_answer.py "What is machine learning?"
+python src/rag_setup.py
 ```
 
-If Step 4 returns relevant chunks about machine learning, **your RAG
-foundation works.** That's a real, working win for Day 1.
+### 2. Start the Chatbot
+This launches the FastAPI server and the LangGraph workflow:
+```bash
+python src/main.py
+```
+After running this, open your web browser and go to `http://localhost:8000` to interact with the beautiful UI!
 
-## What each step teaches you
+### 3. Run the Evaluator
+To test the accuracy of the bot, open a separate terminal and run the evaluation script:
+```bash
+python src/eval.py
+```
 
-| Step | Concept | File |
-|---|---|---|
-| 1 | Web scraping & cleaning HTML | `scraper.py` |
-| 2 | Chunking (why & how to split text) | `chunker.py` |
-| 3 | Embeddings + vector databases | `embed_store.py` |
-| 4 | Semantic similarity search | `retrieve.py` |
-| 5 | Prompting an LLM with retrieved context (RAG) | `llm_answer.py` |
-
-## Roadmap: where this fits in your full project
-
-This starter covers **Section 3.1 (Static Knowledge Layer / RAG)** of your
-problem statement. Here's the suggested order for the rest:
-
-1. ✅ **RAG pipeline** (this starter) — scrape → chunk → embed → retrieve → generate
-2. **Knowledge Graph layer** — extract entities/relationships from your chunks
-   (can use an LLM prompt to extract triples like `(Entity A, relation, Entity B)`),
-   store them in Neo4j (free local install or free cloud tier)
-3. **Long-term memory** — a simple table (SQLite/MongoDB) keyed by `user_id`,
-   storing past questions/preferences; loaded at the start of each conversation
-4. **LangGraph orchestration** — wrap RAG, Knowledge Graph, Memory, and Tools
-   as nodes in a graph, with a router node deciding which path to take per query
-5. **Dynamic tools** — add a node that calls a live API (e.g. weather, search)
-   when the question needs real-time info
-6. **Evaluation** — once everything works, measure context relevance,
-   faithfulness, and answer correctness (can use `ragas` library, or write
-   simple LLM-as-judge prompts)
-7. **FastAPI wrapper** — expose the whole system as a web API so it can be
-   used from a frontend or Postman
-
-## Troubleshooting tips
-
-- If `sentence-transformers` model download fails: check your internet
-  connection — it only needs internet the *first* time, then it's cached.
-- If Chroma throws version errors: make sure your `pip install -r requirements.txt`
-  completed without errors.
-- If `llm_answer.py` can't connect: make sure Ollama is actually running
-  (check with `ollama list` in a terminal).
+## Deployment
+This project is ready to be deployed on platforms like **Render**, **Railway**, or **Heroku**. 
+- Simply upload the files to GitHub.
+- Connect your GitHub repo to your hosting platform.
+- Use the Build Command: `pip install -r requirements.txt && python src/rag_setup.py`
+- Use the Start Command: `uvicorn src.main:app --host 0.0.0.0 --port $PORT`
