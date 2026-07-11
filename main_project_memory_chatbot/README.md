@@ -1,4 +1,4 @@
-# Memory-Augmented Chatbot (Advanced Beginner Project)
+# Memory-Augmented Chatbot 
 
 **Live Demo:** [https://memory-chatbot-bf47.onrender.com](https://memory-chatbot-bf47.onrender.com)
 *(Note: As this is hosted on a free tier, it may take ~50 seconds to wake up if it has been inactive for 15 minutes.)*
