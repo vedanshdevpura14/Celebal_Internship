@@ -83,7 +83,13 @@ def get_chat_history(session_id: str, limit: int = 5) -> str:
 
 #  LLM Integration
 def call_llm(prompt: str, system_instruction: str = "") -> str:
-    if os.environ.get("GEMINI_API_KEY"):
+    if os.environ.get("GROQ_API_KEY"):
+        from groq import Groq
+        client = Groq()
+        messages = [{"role": "system", "content": system_instruction}] if system_instruction else []
+        messages.append({"role": "user", "content": prompt})
+        return client.chat.completions.create(model="llama-3.1-8b-instant", messages=messages, temperature=0.2).choices[0].message.content
+    elif os.environ.get("GEMINI_API_KEY"):
         from google import genai
         client = genai.Client()
         config = {"system_instruction": system_instruction} if system_instruction else None
