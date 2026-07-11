@@ -5,7 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 import chromadb
 
-# --- Configuration ---
+# Configuration
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "data", "raw")
 PROCESSED_DATA_DIR = os.path.join(BASE_DIR, "data", "processed")
@@ -26,7 +26,7 @@ URLS = [
 for folder in [RAW_DATA_DIR, PROCESSED_DATA_DIR, CHROMA_DB_DIR]:
     os.makedirs(folder, exist_ok=True)
 
-# --- 1. Scraper ---
+#Scraper
 def clean_filename(url: str) -> str:
     name = re.sub(r"https?://", "", url)
     name = re.sub(r"[^a-zA-Z0-9]+", "_", name)
@@ -56,7 +56,7 @@ def run_scraper():
             f.write(text)
         print(f"  Saved {len(text)} characters -> {filepath}")
 
-# --- 2. Chunker ---
+# Chunker
 def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     words = text.split()
     chunks = []
@@ -87,7 +87,7 @@ def run_chunker():
         json.dump(all_chunks, f, indent=2)
     print(f"Total chunks saved: {len(all_chunks)}")
 
-# --- 3. Embed Store ---
+#Embed Store
 def run_embed_store():
     print("\n--- STEP 3: Embedding and Storing ---")
     chunks_path = os.path.join(PROCESSED_DATA_DIR, "chunks.json")
@@ -117,7 +117,6 @@ def run_embed_store():
     
     client = chromadb.PersistentClient(path=CHROMA_DB_DIR)
     
-    # Delete the old local model collection to avoid dimensionality conflicts
     try:
         client.delete_collection(name=CHROMA_COLLECTION_NAME)
     except:
@@ -127,7 +126,6 @@ def run_embed_store():
     
     print("Generating embeddings via API and storing in Chroma...")
     import time
-    # Send in smaller batches with delays to avoid Google API rate limits for free tier
     batch_size = 25
     for i in range(0, len(texts), batch_size):
         end = min(i + batch_size, len(texts))
@@ -137,7 +135,7 @@ def run_embed_store():
             documents=texts[i:end],
             metadatas=metadatas[i:end]
         )
-        time.sleep(5) # Pause for 5 seconds to bypass free tier rate limits
+        time.sleep(5)
         
     print(f"Stored {len(chunks)} chunks in ChromaDB.")
 
