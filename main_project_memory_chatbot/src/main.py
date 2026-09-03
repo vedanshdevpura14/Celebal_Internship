@@ -109,7 +109,7 @@ def call_llm(prompt: str, system_instruction: str = "") -> str:
             client = Groq()
             messages = [{"role": "system", "content": system_instruction}] if system_instruction else []
             messages.append({"role": "user", "content": prompt})
-            return client.chat.completions.create(model="llama3-8b-8192", messages=messages, temperature=0.2).choices[0].message.content
+            return client.chat.completions.create(model="llama-3.3-70b-versatile", messages=messages, temperature=0.2).choices[0].message.content
             
         # Agar Gemini ki key hai, toh Google Gemini API use karo
         elif os.environ.get("GEMINI_API_KEY"):
