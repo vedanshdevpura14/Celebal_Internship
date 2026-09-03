@@ -10,36 +10,43 @@ import uvicorn
 import chromadb
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv() # .env file se saari environment variables (jaise API keys) load karta hai
 
 # --- Config ---
+# Project ka root folder ka path nikal rahe hain takki paths absolute rahein
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MEMORY_DB_PATH = os.path.join(BASE_DIR, "data", "memory.db")
-CHROMA_DB_DIR = os.path.join(BASE_DIR, "data", "chroma_db")
-CHROMA_COLLECTION_NAME = "chatbot_knowledge"
+MEMORY_DB_PATH = os.path.join(BASE_DIR, "data", "memory.db") # SQLite database kahan save hoga
+CHROMA_DB_DIR = os.path.join(BASE_DIR, "data", "chroma_db") # Vector DB kahan save hoga
+CHROMA_COLLECTION_NAME = "chatbot_knowledge" # Collection ka naam
 
 # Ensure data directory exists
+# Agar data folder nahi hai toh bana do (exist_ok=True error nahi deta agar folder pehle se hai)
 os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
 
+# FastAPI ka app instance bana rahe hain, yahi humara server hai
 app = FastAPI(title="Beginner AI Chatbot")
 
 #  Memory System (SQLite)
 def get_db_connection():
+    # SQLite database se connection establish kar rahe hain
     conn = sqlite3.connect(MEMORY_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    with conn:
+    conn.row_factory = sqlite3.Row # Rows ko dictionary jaise access karne ke liye
+    with conn: # 'with' use karne se autocommit ho jata hai (transaction safe)
+        # user_memories table banayenge agar nahi hai (user ki details store karne ke liye)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS user_memories (
                 user_id TEXT, memory_key TEXT, memory_value TEXT,
                 PRIMARY KEY (user_id, memory_key)
             )
         """)
+        # chat_history table banayenge pura conversation save karne ke liye
         conn.execute("""
             CREATE TABLE IF NOT EXISTS chat_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT, user_id TEXT, role TEXT, content TEXT
             )
         """)
+        # knowledge_graph table banayenge structured facts save karne ke liye (entity relation model)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS knowledge_graph (
                 entity_a TEXT, relation TEXT, entity_b TEXT
@@ -48,24 +55,31 @@ def get_db_connection():
     return conn
 
 def get_memory_string(user_id: str) -> str:
+    # Kisi user ki saari purani memories (facts) nikalne ke liye
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT memory_key, memory_value FROM user_memories WHERE user_id = ?", (user_id,))
     rows = cursor.fetchall()
     conn.close()
+    
+    # Agar memory nahi mili toh default message
     if not rows: return "No long-term memories stored yet."
+    
+    # Har row ko "- key: value" format mein list comprehension se jod rahe hain
     return "\n".join([f"- {row['memory_key']}: {row['memory_value']}" for row in rows])
 
 def add_memory(user_id: str, key: str, value: str):
+    # Nayi memory database mein add karne ya update karne ke liye (upsert)
     conn = get_db_connection()
     with conn:
         conn.execute("""
             INSERT INTO user_memories (user_id, memory_key, memory_value)
             VALUES (?, ?, ?) ON CONFLICT(user_id, memory_key) DO UPDATE SET memory_value = excluded.memory_value
-        """, (user_id, key, value))
+        """, (user_id, key, value)) # ON CONFLICT update kar dega agar key pehle se exist karti hai
     conn.close()
 
 def save_chat_message(session_id: str, user_id: str, role: str, content: str):
+    # Ek message (user ya assistant ka) chat history mein save karte hain
     conn = get_db_connection()
     with conn:
         conn.execute("INSERT INTO chat_history (session_id, user_id, role, content) VALUES (?, ?, ?, ?)",
@@ -73,63 +87,81 @@ def save_chat_message(session_id: str, user_id: str, role: str, content: str):
     conn.close()
 
 def get_chat_history(session_id: str, limit: int = 5) -> str:
+    # Pichle kuch messages (limit = 5) nikalne ke liye context maintain karne ko
     conn = get_db_connection()
     cursor = conn.cursor()
+    # DESC order mein latein hain takki latest pehle aaye, aur limit apply karte hain
     cursor.execute("SELECT role, content FROM chat_history WHERE session_id = ? ORDER BY id DESC LIMIT ?", (session_id, limit))
     rows = cursor.fetchall()
     conn.close()
+    
+    # History ko wapas straight order mein list mein format karte hain (reversed use karke)
     history = [f"{row['role'].capitalize()}: {row['content']}" for row in reversed(rows)]
     return "\n".join(history)
 
 #  LLM Integration
 def call_llm(prompt: str, system_instruction: str = "") -> str:
-    if os.environ.get("GROQ_API_KEY"):
-        from groq import Groq
-        client = Groq()
-        messages = [{"role": "system", "content": system_instruction}] if system_instruction else []
-        messages.append({"role": "user", "content": prompt})
-        return client.chat.completions.create(model="llama-3.1-8b-instant", messages=messages, temperature=0.2).choices[0].message.content
-    elif os.environ.get("GEMINI_API_KEY"):
-        from google import genai
-        client = genai.Client()
-        config = {"system_instruction": system_instruction} if system_instruction else None
-        return client.models.generate_content(model='gemini-2.5-flash', contents=prompt, config=config).text
-    elif os.environ.get("OPENAI_API_KEY"):
-        from openai import OpenAI
-        client = OpenAI()
-        messages = [{"role": "system", "content": system_instruction}] if system_instruction else []
-        messages.append({"role": "user", "content": prompt})
-        return client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0.2).choices[0].message.content
-    else:
-        # Fallback to local Ollama
-        full_prompt = f"System: {system_instruction}\nUser: {prompt}" if system_instruction else prompt
-        try:
+    # Yeh function decide karta hai ki konsa LLM (Groq, Gemini, OpenAI, Ollama) use karna hai, environment variables ke hisaab se
+    try:
+        # Agar Groq ki API key hai, toh Groq use karo (bohot fast hai)
+        if os.environ.get("GROQ_API_KEY"):
+            from groq import Groq
+            client = Groq()
+            messages = [{"role": "system", "content": system_instruction}] if system_instruction else []
+            messages.append({"role": "user", "content": prompt})
+            return client.chat.completions.create(model="llama3-8b-8192", messages=messages, temperature=0.2).choices[0].message.content
+            
+        # Agar Gemini ki key hai, toh Google Gemini API use karo
+        elif os.environ.get("GEMINI_API_KEY"):
+            from google import genai
+            client = genai.Client()
+            config = {"system_instruction": system_instruction} if system_instruction else None
+            return client.models.generate_content(model='gemini-1.5-flash', contents=prompt, config=config).text
+            
+        # Agar OpenAI ki key hai, toh ChatGPT API (gpt-4o-mini) use karo
+        elif os.environ.get("OPENAI_API_KEY"):
+            from openai import OpenAI
+            client = OpenAI()
+            messages = [{"role": "system", "content": system_instruction}] if system_instruction else []
+            messages.append({"role": "user", "content": prompt})
+            return client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0.2).choices[0].message.content
+            
+        # Agar koi API key nahi hai, toh local Ollama API call karo (offline mode)
+        else:
+            # Fallback to local Ollama
+            full_prompt = f"System: {system_instruction}\nUser: {prompt}" if system_instruction else prompt
             res = requests.post("http://localhost:11434/api/generate", json={"model": "llama3.2", "prompt": full_prompt, "stream": False}, timeout=120)
             res.raise_for_status()
             return res.json()["response"]
-        except Exception as e:
-            return f"Error calling Ollama: {e}"
+    except Exception as e:
+        return f"LLM API Error: {e}"
 
 #  Tools
 def web_search(query: str) -> str:
+    # Internet se real-time information nikalne ke liye DuckDuckGo ka scraper
     print("Performing web search...")
     url = "https://html.duckduckgo.com/html/"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0"} # Fake user agent takki block na ho
     try:
         response = requests.post(url, headers=headers, data={"q": query}, timeout=10)
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(response.text, "html.parser")
         results = []
+        
+        # Pehle 3 search results extract kar rahe hain
         for element in soup.find_all("div", class_="result")[:3]:
             title = element.find("a", class_="result__url")
             snippet = element.find("a", class_="result__snippet")
             if title and snippet:
                 results.append(f"Source: {title.get_text(strip=True)}\nSnippet: {snippet.get_text(strip=True)}")
+        
+        # Saare results ko jod kar string bana denge
         return "\n\n".join(results) if results else "No web results found."
     except Exception as e:
         return f"Web search failed: {e}"
 
 def retrieve_rag(query: str) -> str:
+    # Vector Database (Chroma) se relevant knowledge base nikalne ke liye RAG (Retrieval-Augmented Generation) function
     print("Performing RAG retrieval...")
     try:
         import chromadb.utils.embedding_functions as embedding_functions
@@ -137,28 +169,34 @@ def retrieve_rag(query: str) -> str:
         if not api_key:
             return "RAG retrieval failed: GEMINI_API_KEY is not set."
             
+        # Gemini API ka use kar rahe hain text ko numbers (embeddings) mein convert karne ke liye
         google_ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
             api_key=api_key,
-            model_name="models/gemini-embedding-2"
+            model_name="models/text-embedding-004"
         )
+        
+        # Chroma DB connect karte hain aur query run karte hain (n_results=3 yani top 3 match)
         client = chromadb.PersistentClient(path=CHROMA_DB_DIR)
         collection = client.get_or_create_collection(name=CHROMA_COLLECTION_NAME, embedding_function=google_ef)
         results = collection.query(query_texts=[query], n_results=3)
         
+        # Results ko string mein combine kar rahe hain
         return "\n\n".join(results["documents"][0]) if results and "documents" in results and results["documents"][0] else "No knowledge base documents found."
     except Exception as e:
         return f"RAG retrieval failed: {e}"
 
 #  Core Workflow (Router)
 def update_memory_from_text(user_id: str, text: str):
+    # LLM ka use karke text se naye facts nikalte hain JSON format mein (e.g. name, hobby)
     prompt = f"Extract facts about the user from this text as JSON (e.g. {{\"name\": \"Alice\", \"hobby\": \"coding\"}}). Text: {text}"
     response = call_llm(prompt, "Return pure JSON only.")
     try:
-        # Simple JSON extraction
+        # Simple JSON extraction (curly braces extract karte hain)
         start = response.find("{")
         end = response.rfind("}") + 1
         if start != -1 and end != -1:
             data = json.loads(response[start:end])
+            # Har nayi memory ko database mein add karte hain
             for k, v in data.items():
                 if v: add_memory(user_id, k, str(v))
     except:
@@ -166,9 +204,11 @@ def update_memory_from_text(user_id: str, text: str):
 
 # --- Knowledge Graph System ---
 def extract_and_store_triples(text: str):
+    # LLM se Knowledge Graph (Entity-Relation-Entity) triples nikalte hain (list format mein)
     prompt = f"Extract knowledge graph triples from this text as JSON (format: [{{\"a\": \"Entity1\", \"r\": \"relation\", \"b\": \"Entity2\"}}]). Text: {text}"
     response = call_llm(prompt, "Return pure JSON list only.")
     try:
+        # List [ ] nikalne ka logic
         start = response.find("[")
         end = response.rfind("]") + 1
         if start != -1 and end != -1:
@@ -176,6 +216,7 @@ def extract_and_store_triples(text: str):
             conn = get_db_connection()
             with conn:
                 for triple in data:
+                    # Agar a, r, b teenon hain toh SQL table mein insert kar do
                     if "a" in triple and "r" in triple and "b" in triple:
                         conn.execute("INSERT INTO knowledge_graph (entity_a, relation, entity_b) VALUES (?, ?, ?)",
                                      (str(triple["a"]), str(triple["r"]), str(triple["b"])))
@@ -184,25 +225,32 @@ def extract_and_store_triples(text: str):
         pass
 
 def get_graph_context(query: str) -> str:
-    # A super simple search: just look for words from the query in the graph
+    # Knowledge Graph table mein query ke words dhoondhne ke liye simple search
+    
+    # Query ko words mein tod lete hain (length > 3 wale sirf)
     words = [w for w in query.lower().split() if len(w) > 3]
     if not words: return ""
     
     conn = get_db_connection()
     cursor = conn.cursor()
     results = []
+    
+    # Har word ke liye knowledge graph me entity A ya B ko match karwate hain
     for word in words:
         cursor.execute("SELECT * FROM knowledge_graph WHERE LOWER(entity_a) LIKE ? OR LOWER(entity_b) LIKE ? LIMIT 3", (f"%{word}%", f"%{word}%"))
         results.extend(cursor.fetchall())
     conn.close()
     
     if not results: return "No structured graph data found."
+    
+    # Pehle 5 results ko "- A relation B" format me return kar denge
     return "\n".join([f"- {r['entity_a']} {r['relation']} {r['entity_b']}" for r in results[:5]])
 
 # --- Core Workflow (LangGraph) ---
 from typing import TypedDict
 from langgraph.graph import StateGraph, END
 
+# Agent ki state define kar rahe hain ki current query, context, response kya hai
 class AgentState(TypedDict):
     query: str
     user_id: str
@@ -213,27 +261,45 @@ class AgentState(TypedDict):
     response: str
 
 def router_node(state: AgentState):
-    route_prompt = f"Decide the best source to answer the query: '{state['query']}'. Output exactly one word: 'RAG', 'WEB', or 'DIRECT'."
+    # LLM se puchte hain ki answer kahan se lana hai: VectorDB(RAG), Internet(WEB), ya direct LLM knowledge(DIRECT)
+    route_prompt = f"""Decide the best source to answer the user query.
+Rules:
+- If the query asks for real-time information, current events, news, or current office holders, output 'WEB'.
+- If the query asks about the user's past conversations or personal details, output 'RAG'.
+- For general knowledge or simple conversation, output 'DIRECT'.
+
+Query: '{state['query']}'
+Output exactly one word: 'RAG', 'WEB', or 'DIRECT'."""
     route = call_llm(route_prompt).strip().upper()
+    
+    # Graceful error handling: If Ollama returns an error string, default to a safe route
+    if "ERROR" in route or route not in ["RAG", "WEB", "DIRECT"]:
+        print(f"Routing failed, defaulting to DIRECT. Reason: {route}")
+        route = "DIRECT"
+        
     return {"route": route}
 
 def rag_node(state: AgentState):
+    # Agar RAG decide hua toh ye function run hoga. Ye Vector DB aur Graph DB dono se context layega
     vec_context = retrieve_rag(state['query'])
     kg_context = get_graph_context(state['query'])
     combined = f"Vector RAG:\n{vec_context}\n\nKnowledge Graph:\n{kg_context}"
     return {"context": combined, "source_used": "Knowledge Base (RAG & Graph)"}
 
 def web_node(state: AgentState):
+    # Agar WEB decide hua toh internet search chalega
     return {"context": web_search(state['query']), "source_used": "Web Search"}
 
 def generate_node(state: AgentState):
+    # Final step: Purani memory, chat history aur retrieved context (rag ya web se aya hua) combine karke final answer generate karenge
     memory = get_memory_string(state['user_id'])
     history = get_chat_history(state['session_id'])
     
+    # Final prompt ban raha hai LLM ke liye
     prompt = f"User Memory:\n{memory}\n\nRecent History:\n{history}\n\nContext:\n{state.get('context', 'None')}\n\nUser Query: {state['query']}"
-    response = call_llm(prompt, "You are a helpful assistant. Use the context and memory to answer the question.")
+    response = call_llm(prompt, "You are a helpful assistant. Answer the user's question directly using the provided Context and User Memory. Do not mention your internal knowledge cutoff date.")
     
-    # Save to history & update memory and graph
+    # Final response ko database mein save karte hain aur Memory/Graph mein update trigger karte hain
     save_chat_message(state['session_id'], state['user_id'], "assistant", response)
     update_memory_from_text(state['user_id'], f"User: {state['query']}\\nAssistant: {response}")
     extract_and_store_triples(f"User: {state['query']}\\nAssistant: {response}")
@@ -241,34 +307,49 @@ def generate_node(state: AgentState):
     return {"response": response}
 
 def decide_next_node(state: AgentState):
+    # LangGraph ko batata hai ki route ke basis pe agla node kaunsa hoga
     if "WEB" in state["route"]: return "web_node"
-    if "DIRECT" in state["route"]: return "generate_node"
+    if "DIRECT" in state["route"]: return "generate_node" # Seedha answer do
     return "rag_node"
 
 # Build Graph
+# Ek naya state graph banate hain aur usme apne saare functions (nodes) jodte hain
 workflow = StateGraph(AgentState)
 workflow.add_node("router_node", router_node)
 workflow.add_node("rag_node", rag_node)
 workflow.add_node("web_node", web_node)
 workflow.add_node("generate_node", generate_node)
 
+# Entry point: graph humesha router se start hoga
 workflow.set_entry_point("router_node")
+
+# Conditional edges banate hain: router ke baad route ke hisaab se kaha jana hai
 workflow.add_conditional_edges("router_node", decide_next_node, {
     "rag_node": "rag_node",
     "web_node": "web_node",
     "generate_node": "generate_node"
 })
+
+# RAG ya Web ke baad finally generate_node (answer banane) par jana hai
 workflow.add_edge("rag_node", "generate_node")
 workflow.add_edge("web_node", "generate_node")
+# generate_node ke baad kaam khatam (END)
 workflow.add_edge("generate_node", END)
 
+# Graph ko compile karke executable banate hain
 app_workflow = workflow.compile()
 
 def process_chat(query: str, user_id: str, session_id: str) -> dict:
+    # User ke query ko accept karta hai, save karta hai aur workflow start karta hai
     save_chat_message(session_id, user_id, "user", query)
+    
+    # Initial state (input data) graph ko de rahe hain
     initial_state = {"query": query, "user_id": user_id, "session_id": session_id, "context": "", "source_used": "Direct"}
+    
+    # Graph ko invoke (start) kar rahe hain
     result = app_workflow.invoke(initial_state)
     
+    # Diagnostics UI pe dikhane ke liye log string banate hain
     diagnostics = f"LangGraph Route: {result.get('route', 'Direct')} Node | "
     diagnostics += f"Source: {result.get('source_used', 'None')} | "
     diagnostics += "Memory & Knowledge Graph Updated"
@@ -276,15 +357,18 @@ def process_chat(query: str, user_id: str, session_id: str) -> dict:
     return {"response": result["response"], "source_used": result["source_used"], "diagnostics": diagnostics}
 
 # API Endpoints
+# Pydantic model request payload ka format define karne ke liye (FastAPI requirement)
 class ChatRequest(BaseModel):
     query: str
     user_id: str = "default_user"
     session_id: str = "default_session"
 
+# /api/chat endpoint banaya jo process_chat function ko call karega POST request aane pe
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     return process_chat(req.query, req.user_id, req.session_id)
 
+# /api/memory endpoint user ki long-term memory dekhne ke liye
 @app.get("/api/memory")
 async def get_user_memory(user_id: str = "default_user"):
     return {"memory": get_memory_string(user_id)}
