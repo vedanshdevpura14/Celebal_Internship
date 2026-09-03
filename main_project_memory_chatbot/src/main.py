@@ -102,6 +102,7 @@ def get_chat_history(session_id: str, limit: int = 5) -> str:
 #  LLM Integration
 def call_llm(prompt: str, system_instruction: str = "") -> str:
     # Cascading fallback: Groq -> Gemini -> OpenAI -> Ollama
+    api_errors = []
     
     # 1. Groq
     if os.environ.get("GROQ_API_KEY"):
@@ -112,7 +113,15 @@ def call_llm(prompt: str, system_instruction: str = "") -> str:
             messages.append({"role": "user", "content": prompt})
             
             # Try multiple Groq models since they frequently update/decommission them
-            groq_models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]
+            groq_models = [
+                "qwen/qwen3.8-27b", 
+                "qwen/qwen3.6-27b",
+                "openai/gpt-oss-120b",
+                "openai/gpt-oss-20b",
+                "llama-3.3-70b-versatile", 
+                "llama-3.1-8b-instant", 
+                "mixtral-8x7b-32768"
+            ]
             for model_name in groq_models:
                 try:
                     return client.chat.completions.create(model=model_name, messages=messages, temperature=0.2).choices[0].message.content
@@ -120,9 +129,9 @@ def call_llm(prompt: str, system_instruction: str = "") -> str:
                     if "404" in str(e) or "400" in str(e) or "decommissioned" in str(e).lower():
                         continue # Model not found, try the next one in the list
                     raise e # For other errors (like rate limits), fallback to Gemini
-            print("All Groq models failed.")
+            api_errors.append("Groq: All attempted models returned 404/400.")
         except Exception as e:
-            print(f"Groq API Error: {e}, falling back to Gemini...")
+            api_errors.append(f"Groq: {e}")
             
     # 2. Gemini
     if os.environ.get("GEMINI_API_KEY"):
@@ -132,7 +141,7 @@ def call_llm(prompt: str, system_instruction: str = "") -> str:
             config = {"system_instruction": system_instruction} if system_instruction else None
             return client.models.generate_content(model='gemini-1.5-flash', contents=prompt, config=config).text
         except Exception as e:
-            print(f"Gemini API Error: {e}, falling back to OpenAI...")
+            api_errors.append(f"Gemini: {e}")
             
     # 3. OpenAI
     if os.environ.get("OPENAI_API_KEY"):
@@ -143,7 +152,7 @@ def call_llm(prompt: str, system_instruction: str = "") -> str:
             messages.append({"role": "user", "content": prompt})
             return client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0.2).choices[0].message.content
         except Exception as e:
-            print(f"OpenAI API Error: {e}, falling back to Ollama...")
+            api_errors.append(f"OpenAI: {e}")
             
     # 4. Ollama (Local Fallback)
     try:
@@ -152,7 +161,10 @@ def call_llm(prompt: str, system_instruction: str = "") -> str:
         res.raise_for_status()
         return res.json()["response"]
     except Exception as e:
-        return f"LLM API Error: All APIs failed or are missing. Please check your API keys."
+        api_errors.append(f"Ollama: {e}")
+        
+    error_summary = " | ".join(api_errors)
+    return f"LLM API Error: All APIs failed. Details: {error_summary}"
 
 #  Tools
 def web_search(query: str) -> str:
