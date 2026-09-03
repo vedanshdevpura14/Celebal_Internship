@@ -101,40 +101,58 @@ def get_chat_history(session_id: str, limit: int = 5) -> str:
 
 #  LLM Integration
 def call_llm(prompt: str, system_instruction: str = "") -> str:
-    # Yeh function decide karta hai ki konsa LLM (Groq, Gemini, OpenAI, Ollama) use karna hai, environment variables ke hisaab se
-    try:
-        # Agar Groq ki API key hai, toh Groq use karo (bohot fast hai)
-        if os.environ.get("GROQ_API_KEY"):
+    # Cascading fallback: Groq -> Gemini -> OpenAI -> Ollama
+    
+    # 1. Groq
+    if os.environ.get("GROQ_API_KEY"):
+        try:
             from groq import Groq
             client = Groq()
             messages = [{"role": "system", "content": system_instruction}] if system_instruction else []
             messages.append({"role": "user", "content": prompt})
-            return client.chat.completions.create(model="llama-3.3-70b-versatile", messages=messages, temperature=0.2).choices[0].message.content
             
-        # Agar Gemini ki key hai, toh Google Gemini API use karo
-        elif os.environ.get("GEMINI_API_KEY"):
+            # Try multiple Groq models since they frequently update/decommission them
+            groq_models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]
+            for model_name in groq_models:
+                try:
+                    return client.chat.completions.create(model=model_name, messages=messages, temperature=0.2).choices[0].message.content
+                except Exception as e:
+                    if "404" in str(e) or "400" in str(e) or "decommissioned" in str(e).lower():
+                        continue # Model not found, try the next one in the list
+                    raise e # For other errors (like rate limits), fallback to Gemini
+            print("All Groq models failed.")
+        except Exception as e:
+            print(f"Groq API Error: {e}, falling back to Gemini...")
+            
+    # 2. Gemini
+    if os.environ.get("GEMINI_API_KEY"):
+        try:
             from google import genai
             client = genai.Client()
             config = {"system_instruction": system_instruction} if system_instruction else None
             return client.models.generate_content(model='gemini-1.5-flash', contents=prompt, config=config).text
+        except Exception as e:
+            print(f"Gemini API Error: {e}, falling back to OpenAI...")
             
-        # Agar OpenAI ki key hai, toh ChatGPT API (gpt-4o-mini) use karo
-        elif os.environ.get("OPENAI_API_KEY"):
+    # 3. OpenAI
+    if os.environ.get("OPENAI_API_KEY"):
+        try:
             from openai import OpenAI
             client = OpenAI()
             messages = [{"role": "system", "content": system_instruction}] if system_instruction else []
             messages.append({"role": "user", "content": prompt})
             return client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0.2).choices[0].message.content
+        except Exception as e:
+            print(f"OpenAI API Error: {e}, falling back to Ollama...")
             
-        # Agar koi API key nahi hai, toh local Ollama API call karo (offline mode)
-        else:
-            # Fallback to local Ollama
-            full_prompt = f"System: {system_instruction}\nUser: {prompt}" if system_instruction else prompt
-            res = requests.post("http://localhost:11434/api/generate", json={"model": "llama3.2", "prompt": full_prompt, "stream": False}, timeout=120)
-            res.raise_for_status()
-            return res.json()["response"]
+    # 4. Ollama (Local Fallback)
+    try:
+        full_prompt = f"System: {system_instruction}\nUser: {prompt}" if system_instruction else prompt
+        res = requests.post("http://localhost:11434/api/generate", json={"model": "llama3.2", "prompt": full_prompt, "stream": False}, timeout=120)
+        res.raise_for_status()
+        return res.json()["response"]
     except Exception as e:
-        return f"LLM API Error: {e}"
+        return f"LLM API Error: All APIs failed or are missing. Please check your API keys."
 
 #  Tools
 def web_search(query: str) -> str:
